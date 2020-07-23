@@ -135,6 +135,14 @@ struct ngx_event_s {
     uint32_t         padding[NGX_EVENT_T_PADDING];
 #endif
 #endif
+
+    // io_uring
+    int                 uring_res;
+    int                 pending;
+    size_t              rq_size;
+    int                 rq_chain_cnt;
+    struct iovec        iovecs[NGX_IOVS_PREALLOCATE];
+
 };
 
 

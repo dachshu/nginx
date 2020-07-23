@@ -194,6 +194,8 @@ static char **ngx_os_environ;
 int ngx_cdecl
 main(int argc, char *const *argv)
 {
+    (void) ngx_write_console(ngx_stderr, "main()\n", strlen("main()\n"));
+
     ngx_buf_t        *b;
     ngx_log_t        *log;
     ngx_uint_t        i;
@@ -362,9 +364,9 @@ main(int argc, char *const *argv)
         return 1;
     }
 
-    if (ngx_log_redirect_stderr(cycle) != NGX_OK) {
-        return 1;
-    }
+    //if (ngx_log_redirect_stderr(cycle) != NGX_OK) {
+    //    return 1;
+    //}
 
     if (log->file->fd != ngx_stderr) {
         if (ngx_close_file(log->file->fd) == NGX_FILE_ERROR) {
@@ -373,8 +375,9 @@ main(int argc, char *const *argv)
         }
     }
 
-    ngx_use_stderr = 0;
-
+    //ngx_use_stderr = 0;
+    ngx_use_stderr = 1;
+    
     if (ngx_process == NGX_PROCESS_SINGLE) {
         ngx_single_process_cycle(cycle);
 
@@ -492,7 +495,6 @@ ngx_add_inherited_sockets(ngx_cycle_t *cycle)
             ngx_memzero(ls, sizeof(ngx_listening_t));
 
             ls->fd = (ngx_socket_t) s;
-            ls->inherited = 1;
         }
     }
 

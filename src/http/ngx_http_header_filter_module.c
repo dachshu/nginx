@@ -156,6 +156,7 @@ ngx_http_header_out_t  ngx_http_headers_out[] = {
 static ngx_int_t
 ngx_http_header_filter(ngx_http_request_t *r)
 {
+    //printf("ngx_http_header_filter()\n");
     u_char                    *p;
     size_t                     len;
     ngx_str_t                  host, *status_line;

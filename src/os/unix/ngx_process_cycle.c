@@ -77,11 +77,12 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
     u_char            *p;
     size_t             size;
     ngx_int_t          i;
-    ngx_uint_t         sigio;
+    ngx_uint_t         n, sigio;
     sigset_t           set;
     struct itimerval   itv;
     ngx_uint_t         live;
     ngx_msec_t         delay;
+    ngx_listening_t   *ls;
     ngx_core_conf_t   *ccf;
 
     sigemptyset(&set);
@@ -203,7 +204,16 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
         if (ngx_quit) {
             ngx_signal_worker_processes(cycle,
                                         ngx_signal_value(NGX_SHUTDOWN_SIGNAL));
-            ngx_close_listening_sockets(cycle);
+
+            ls = cycle->listening.elts;
+            for (n = 0; n < cycle->listening.nelts; n++) {
+                if (ngx_close_socket(ls[n].fd) == -1) {
+                    ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_socket_errno,
+                                  ngx_close_socket_n " %V failed",
+                                  &ls[n].addr_text);
+                }
+            }
+            cycle->listening.nelts = 0;
 
             continue;
         }
@@ -725,7 +735,8 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
     ngx_worker_process_init(cycle, worker);
 
     ngx_setproctitle("worker process");
-
+    //printf("worker process\n");
+    
     for ( ;; ) {
 
         if (ngx_exiting) {
@@ -815,59 +826,59 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_int_t worker)
         }
     }
 
-    if (geteuid() == 0) {
-        if (setgid(ccf->group) == -1) {
-            ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_errno,
-                          "setgid(%d) failed", ccf->group);
-            /* fatal */
-            exit(2);
-        }
+//     if (geteuid() == 0) {
+//         if (setgid(ccf->group) == -1) {
+//             ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_errno,
+//                           "setgid(%d) failed", ccf->group);
+//             /* fatal */
+//             exit(2);
+//         }
 
-        if (initgroups(ccf->username, ccf->group) == -1) {
-            ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_errno,
-                          "initgroups(%s, %d) failed",
-                          ccf->username, ccf->group);
-        }
+//         if (initgroups(ccf->username, ccf->group) == -1) {
+//             ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_errno,
+//                           "initgroups(%s, %d) failed",
+//                           ccf->username, ccf->group);
+//         }
 
-#if (NGX_HAVE_PR_SET_KEEPCAPS && NGX_HAVE_CAPABILITIES)
-        if (ccf->transparent && ccf->user) {
-            if (prctl(PR_SET_KEEPCAPS, 1, 0, 0, 0) == -1) {
-                ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_errno,
-                              "prctl(PR_SET_KEEPCAPS, 1) failed");
-                /* fatal */
-                exit(2);
-            }
-        }
-#endif
+// #if (NGX_HAVE_PR_SET_KEEPCAPS && NGX_HAVE_CAPABILITIES)
+//         if (ccf->transparent && ccf->user) {
+//             if (prctl(PR_SET_KEEPCAPS, 1, 0, 0, 0) == -1) {
+//                 ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_errno,
+//                               "prctl(PR_SET_KEEPCAPS, 1) failed");
+//                 /* fatal */
+//                 exit(2);
+//             }
+//         }
+// #endif
 
-        if (setuid(ccf->user) == -1) {
-            ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_errno,
-                          "setuid(%d) failed", ccf->user);
-            /* fatal */
-            exit(2);
-        }
+//         if (setuid(ccf->user) == -1) {
+//             ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_errno,
+//                           "setuid(%d) failed", ccf->user);
+//             /* fatal */
+//             exit(2);
+//         }
 
-#if (NGX_HAVE_CAPABILITIES)
-        if (ccf->transparent && ccf->user) {
-            struct __user_cap_data_struct    data;
-            struct __user_cap_header_struct  header;
+// #if (NGX_HAVE_CAPABILITIES)
+//         if (ccf->transparent && ccf->user) {
+//             struct __user_cap_data_struct    data;
+//             struct __user_cap_header_struct  header;
 
-            ngx_memzero(&header, sizeof(struct __user_cap_header_struct));
-            ngx_memzero(&data, sizeof(struct __user_cap_data_struct));
+//             ngx_memzero(&header, sizeof(struct __user_cap_header_struct));
+//             ngx_memzero(&data, sizeof(struct __user_cap_data_struct));
 
-            header.version = _LINUX_CAPABILITY_VERSION_1;
-            data.effective = CAP_TO_MASK(CAP_NET_RAW);
-            data.permitted = data.effective;
+//             header.version = _LINUX_CAPABILITY_VERSION_1;
+//             data.effective = CAP_TO_MASK(CAP_NET_RAW);
+//             data.permitted = data.effective;
 
-            if (syscall(SYS_capset, &header, &data) == -1) {
-                ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_errno,
-                              "capset() failed");
-                /* fatal */
-                exit(2);
-            }
-        }
-#endif
-    }
+//             if (syscall(SYS_capset, &header, &data) == -1) {
+//                 ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_errno,
+//                               "capset() failed");
+//                 /* fatal */
+//                 exit(2);
+//             }
+//         }
+// #endif
+//     }
 
     if (worker >= 0) {
         cpu_affinity = ngx_get_cpu_affinity(worker);

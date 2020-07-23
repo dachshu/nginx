@@ -84,8 +84,6 @@ typedef struct {
     ngx_uint_t                 pings;
     ngx_uint_t                 settings;
 
-    off_t                      length;
-
     ssize_t                    send_window;
     size_t                     recv_window;
 
@@ -122,7 +120,6 @@ typedef struct {
     unsigned                   end_stream:1;
     unsigned                   done:1;
     unsigned                   status:1;
-    unsigned                   rst:1;
 
     ngx_http_request_t        *request;
 
@@ -1208,7 +1205,6 @@ ngx_http_grpc_reinit_request(ngx_http_request_t *r)
     ctx->end_stream = 0;
     ctx->done = 0;
     ctx->status = 0;
-    ctx->rst = 0;
     ctx->connection = NULL;
 
     return NGX_OK;
@@ -1955,28 +1951,10 @@ ngx_http_grpc_filter_init(void *data)
     r = ctx->request;
     u = r->upstream;
 
-    if (u->headers_in.status_n == NGX_HTTP_NO_CONTENT
-        || u->headers_in.status_n == NGX_HTTP_NOT_MODIFIED
-        || r->method == NGX_HTTP_HEAD)
-    {
-        ctx->length = 0;
-
-    } else {
-        ctx->length = u->headers_in.content_length_n;
-    }
+    u->length = 1;
 
     if (ctx->end_stream) {
-
-        if (ctx->length > 0) {
-            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                          "upstream prematurely closed stream");
-            return NGX_ERROR;
-        }
-
         u->length = 0;
-
-    } else {
-        u->length = 1;
     }
 
     return NGX_OK;
@@ -2018,12 +1996,6 @@ ngx_http_grpc_filter(void *data, ssize_t bytes)
             if (rc == NGX_AGAIN) {
 
                 if (ctx->done) {
-
-                    if (ctx->length > 0) {
-                        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                                      "upstream prematurely closed stream");
-                        return NGX_ERROR;
-                    }
 
                     /*
                      * We have finished parsing the response and the
@@ -2078,17 +2050,6 @@ ngx_http_grpc_filter(void *data, ssize_t bytes)
                     return NGX_ERROR;
                 }
 
-                if (ctx->length != -1) {
-                    if ((off_t) ctx->rest > ctx->length) {
-                        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                                      "upstream sent response body larger "
-                                      "than indicated content length");
-                        return NGX_ERROR;
-                    }
-
-                    ctx->length -= ctx->rest;
-                }
-
                 if (ctx->rest > ctx->recv_window) {
                     ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                                   "upstream violated stream flow control, "
@@ -2127,10 +2088,7 @@ ngx_http_grpc_filter(void *data, ssize_t bytes)
                 return NGX_ERROR;
             }
 
-            if (ctx->stream_id && ctx->done
-                && ctx->type != NGX_HTTP_V2_RST_STREAM_FRAME
-                && ctx->type != NGX_HTTP_V2_WINDOW_UPDATE_FRAME)
-            {
+            if (ctx->stream_id && ctx->done) {
                 ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                               "upstream sent frame for closed stream %ui",
                               ctx->stream_id);
@@ -2173,21 +2131,11 @@ ngx_http_grpc_filter(void *data, ssize_t bytes)
                 return NGX_ERROR;
             }
 
-            if (ctx->error || !ctx->done) {
-                ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                              "upstream rejected request with error %ui",
-                              ctx->error);
-                return NGX_ERROR;
-            }
+            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                          "upstream rejected request with error %ui",
+                          ctx->error);
 
-            if (ctx->rst) {
-                ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                              "upstream sent frame for closed stream %ui",
-                              ctx->stream_id);
-                return NGX_ERROR;
-            }
-
-            ctx->rst = 1;
+            return NGX_ERROR;
         }
 
         if (ctx->type == NGX_HTTP_V2_GOAWAY_FRAME) {

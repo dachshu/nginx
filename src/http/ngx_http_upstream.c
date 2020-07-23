@@ -77,6 +77,9 @@ static void
 static void
     ngx_http_upstream_process_non_buffered_request(ngx_http_request_t *r,
     ngx_uint_t do_write);
+static ngx_int_t ngx_http_upstream_non_buffered_filter_init(void *data);
+static ngx_int_t ngx_http_upstream_non_buffered_filter(void *data,
+    ssize_t bytes);
 #if (NGX_THREADS)
 static ngx_int_t ngx_http_upstream_thread_handler(ngx_thread_task_t *task,
     ngx_file_t *file);
@@ -1916,7 +1919,6 @@ ngx_http_upstream_reinit(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
     u->keepalive = 0;
     u->upgrade = 0;
-    u->error = 0;
 
     ngx_memzero(&u->headers_in, sizeof(ngx_http_upstream_headers_in_t));
     u->headers_in.content_length_n = -1;
@@ -2500,8 +2502,6 @@ ngx_http_upstream_test_next(ngx_http_request_t *r, ngx_http_upstream_t *u)
         }
 
 #endif
-
-        break;
     }
 
 #if (NGX_HTTP_CACHE)
@@ -3625,7 +3625,7 @@ ngx_http_upstream_process_non_buffered_request(ngx_http_request_t *r,
                     return;
                 }
 
-                if (upstream->read->error || u->error) {
+                if (upstream->read->error) {
                     ngx_http_upstream_finalize_request(r, u,
                                                        NGX_HTTP_BAD_GATEWAY);
                     return;
@@ -3703,14 +3703,14 @@ ngx_http_upstream_process_non_buffered_request(ngx_http_request_t *r,
 }
 
 
-ngx_int_t
+static ngx_int_t
 ngx_http_upstream_non_buffered_filter_init(void *data)
 {
     return NGX_OK;
 }
 
 
-ngx_int_t
+static ngx_int_t
 ngx_http_upstream_non_buffered_filter(void *data, ssize_t bytes)
 {
     ngx_http_request_t  *r = data;
@@ -3743,18 +3743,6 @@ ngx_http_upstream_non_buffered_filter(void *data, ssize_t bytes)
     cl->buf->tag = u->output.tag;
 
     if (u->length == -1) {
-        return NGX_OK;
-    }
-
-    if (bytes > u->length) {
-
-        ngx_log_error(NGX_LOG_WARN, r->connection->log, 0,
-                      "upstream sent more data than specified in "
-                      "\"Content-Length\" header");
-
-        cl->buf->last = cl->buf->pos + u->length;
-        u->length = 0;
-
         return NGX_OK;
     }
 

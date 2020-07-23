@@ -612,6 +612,7 @@ ngx_timer_signal_handler(int signo)
 static ngx_int_t
 ngx_event_process_init(ngx_cycle_t *cycle)
 {
+    //ngx_write_console(ngx_stderr, "ngx_event_process_init()\n", strlen("ngx_event_process_init()\n"));
     ngx_uint_t           m, i;
     ngx_event_t         *rev, *wev;
     ngx_listening_t     *ls;

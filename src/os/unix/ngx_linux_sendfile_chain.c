@@ -162,6 +162,7 @@ ngx_linux_sendfile_chain(ngx_connection_t *c, ngx_chain_t *in, off_t limit)
             /* coalesce the neighbouring file bufs */
 
             file_size = (size_t) ngx_chain_coalesce_file(&cl, limit - send);
+            //printf("file size : %ld\n", file_size);
 
             send += file_size;
 #if 1
@@ -186,6 +187,7 @@ ngx_linux_sendfile_chain(ngx_connection_t *c, ngx_chain_t *in, off_t limit)
 
         } else {
             n = ngx_writev(c, &header);
+            //printf("writev size : %ld\n", n);
 
             if (n == NGX_ERROR) {
                 return NGX_CHAIN_ERROR;
@@ -220,6 +222,7 @@ ngx_linux_sendfile_chain(ngx_connection_t *c, ngx_chain_t *in, off_t limit)
         }
 
         if (send >= limit || in == NULL) {
+            //printf("linux_send_file_chain : %ld\n", c->sent);
             return in;
         }
     }

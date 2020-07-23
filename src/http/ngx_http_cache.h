@@ -160,7 +160,6 @@ struct ngx_http_file_cache_s {
 
     ngx_path_t                      *path;
 
-    off_t                            min_free;
     off_t                            max_size;
     size_t                           bsize;
 

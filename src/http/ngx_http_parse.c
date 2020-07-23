@@ -104,6 +104,15 @@ ngx_int_t
 ngx_http_parse_request_line(ngx_http_request_t *r, ngx_buf_t *b)
 {
     u_char  c, ch, *p, *m;
+    // printf("ngx_http_parse_request_line\n");
+    // printf("buffer : %p \n", b->pos);
+    // int cnt = 0;
+    //  for (p = b->pos; p < b->last; p++) {
+    //     ch = *p;
+    //     printf("%c", ch);
+    //     ++cnt;
+    // }
+    // printf("\n------------%d\n", cnt);
     enum {
         sw_start = 0,
         sw_method,
