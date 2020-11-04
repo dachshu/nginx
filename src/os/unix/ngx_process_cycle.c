@@ -735,8 +735,7 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
     ngx_worker_process_init(cycle, worker);
 
     ngx_setproctitle("worker process");
-    //printf("worker process\n");
-    
+
     for ( ;; ) {
 
         if (ngx_exiting) {

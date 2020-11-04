@@ -194,14 +194,14 @@ static char **ngx_os_environ;
 int ngx_cdecl
 main(int argc, char *const *argv)
 {
-    (void) ngx_write_console(ngx_stderr, "main()\n", strlen("main()\n"));
-
     ngx_buf_t        *b;
     ngx_log_t        *log;
     ngx_uint_t        i;
     ngx_cycle_t      *cycle, init_cycle;
     ngx_conf_dump_t  *cd;
     ngx_core_conf_t  *ccf;
+
+    (void) ngx_write_console(ngx_stderr, "main()\n", strlen("main()\n"));
 
     ngx_debug_init();
 
@@ -364,9 +364,9 @@ main(int argc, char *const *argv)
         return 1;
     }
 
-    //if (ngx_log_redirect_stderr(cycle) != NGX_OK) {
-    //    return 1;
-    //}
+    // if (ngx_log_redirect_stderr(cycle) != NGX_OK) {
+    //     return 1;
+    // }
 
     if (log->file->fd != ngx_stderr) {
         if (ngx_close_file(log->file->fd) == NGX_FILE_ERROR) {
@@ -377,7 +377,7 @@ main(int argc, char *const *argv)
 
     //ngx_use_stderr = 0;
     ngx_use_stderr = 1;
-    
+
     if (ngx_process == NGX_PROCESS_SINGLE) {
         ngx_single_process_cycle(cycle);
 

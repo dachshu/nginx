@@ -1,7 +1,7 @@
-#define NGX_CONFIGURE ""
+#define NGX_CONFIGURE " --sbin-path=/usr/local/nginx/nginx --conf-path=/usr/local/nginx/nginx.conf --pid-path=/usr/local/nginx/nginx.pid --with-http_ssl_module --with-stream --with-pcre=../pcre-8.44 --with-zlib=../zlib-1.2.11 --without-http_empty_gif_module"
 
 #ifndef NGX_COMPILER
-#define NGX_COMPILER  "gcc 10.1.0 (GCC) "
+#define NGX_COMPILER  "gcc 9.3.0 (Ubuntu 9.3.0-10ubuntu2) "
 #endif
 
 
@@ -383,6 +383,11 @@
 #endif
 
 
+#ifndef NGX_HTTP_SSL
+#define NGX_HTTP_SSL  1
+#endif
+
+
 #ifndef NGX_HTTP_X_FORWARDED_FOR
 #define NGX_HTTP_X_FORWARDED_FOR  1
 #endif
@@ -393,13 +398,23 @@
 #endif
 
 
+#ifndef NGX_STREAM_UPSTREAM_ZONE
+#define NGX_STREAM_UPSTREAM_ZONE  1
+#endif
+
+
 #ifndef NGX_PCRE
 #define NGX_PCRE  1
 #endif
 
 
-#ifndef NGX_HAVE_PCRE_JIT
-#define NGX_HAVE_PCRE_JIT  1
+#ifndef NGX_OPENSSL
+#define NGX_OPENSSL  1
+#endif
+
+
+#ifndef NGX_SSL
+#define NGX_SSL  1
 #endif
 
 
@@ -414,22 +429,22 @@
 
 
 #ifndef NGX_CONF_PREFIX
-#define NGX_CONF_PREFIX  "conf/"
+#define NGX_CONF_PREFIX  "/usr/local/nginx/"
 #endif
 
 
 #ifndef NGX_SBIN_PATH
-#define NGX_SBIN_PATH  "sbin/nginx"
+#define NGX_SBIN_PATH  "/usr/local/nginx/nginx"
 #endif
 
 
 #ifndef NGX_CONF_PATH
-#define NGX_CONF_PATH  "conf/nginx.conf"
+#define NGX_CONF_PATH  "/usr/local/nginx/nginx.conf"
 #endif
 
 
 #ifndef NGX_PID_PATH
-#define NGX_PID_PATH  "logs/nginx.pid"
+#define NGX_PID_PATH  "/usr/local/nginx/nginx.pid"
 #endif
 
 
@@ -489,6 +504,6 @@
 
 
 #ifndef NGX_GROUP
-#define NGX_GROUP  "nobody"
+#define NGX_GROUP  "nogroup"
 #endif
 

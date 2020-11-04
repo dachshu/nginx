@@ -17,6 +17,7 @@ extern ngx_module_t ngx_kqueue_module;
 extern ngx_module_t ngx_eventport_module;
 extern ngx_module_t ngx_devpoll_module;
 extern ngx_module_t ngx_epoll_module;
+extern ngx_module_t ngx_uring_module;
 extern ngx_module_t ngx_select_module;
 
 
@@ -612,7 +613,6 @@ ngx_timer_signal_handler(int signo)
 static ngx_int_t
 ngx_event_process_init(ngx_cycle_t *cycle)
 {
-    //ngx_write_console(ngx_stderr, "ngx_event_process_init()\n", strlen("ngx_event_process_init()\n"));
     ngx_uint_t           m, i;
     ngx_event_t         *rev, *wev;
     ngx_listening_t     *ls;
@@ -729,6 +729,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
     cycle->connections =
         ngx_alloc(sizeof(ngx_connection_t) * cycle->connection_n, cycle->log);
+    printf("connection num : %ld\n", cycle->connection_n);
     if (cycle->connections == NULL) {
         return NGX_ERROR;
     }

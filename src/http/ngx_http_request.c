@@ -206,7 +206,6 @@ ngx_http_header_t  ngx_http_headers_in[] = {
 void
 ngx_http_init_connection(ngx_connection_t *c)
 {
-    //printf("ngx_http_init_connection()\n");
     ngx_uint_t              i;
     ngx_event_t            *rev;
     struct sockaddr_in     *sin;
@@ -350,10 +349,9 @@ ngx_http_init_connection(ngx_connection_t *c)
         c->log->action = "reading PROXY protocol";
     }
 
-    if (rev->ready || ngx_event_flags & NGX_USE_EPOLL_EVENT) {
-    //if (rev->ready) {
+    if (rev->ready || ngx_event_flags & NGX_USE_URING_EVENT) {
         /* the deferred accept(), iocp */
-        //printf("*******\n");
+
         if (ngx_use_accept_mutex) {
             ngx_post_event(rev, &ngx_posted_events);
             return;
@@ -365,7 +363,7 @@ ngx_http_init_connection(ngx_connection_t *c)
 
     ngx_add_timer(rev, c->listening->post_accept_timeout);
     ngx_reusable_connection(c, 1);
-    //printf("ngx_handle_read_event() int http_init\n");
+
     if (ngx_handle_read_event(rev, 0) != NGX_OK) {
         ngx_http_close_connection(c);
         return;
@@ -428,7 +426,6 @@ ngx_http_wait_request_handler(ngx_event_t *rev)
         b->end = b->last + size;
     }
 
-   // printf("ngx_http_wait_request_handler()\n");
     n = c->recv(c, b->last, size);
 
     if (n == NGX_AGAIN) {
@@ -467,7 +464,7 @@ ngx_http_wait_request_handler(ngx_event_t *rev)
     }
 
     b->last += n;
-   
+
     if (hc->proxy_protocol) {
         hc->proxy_protocol = 0;
 
@@ -1040,7 +1037,6 @@ failed:
 static void
 ngx_http_process_request_line(ngx_event_t *rev)
 {
-    //printf("ngx_http_process_request_line\n");
     ssize_t              n;
     ngx_int_t            rc, rv;
     ngx_str_t            host;
@@ -1168,7 +1164,6 @@ ngx_http_process_request_line(ngx_event_t *rev)
                 ngx_http_finalize_request(r, NGX_HTTP_VERSION_NOT_SUPPORTED);
 
             } else {
-                //////////////////////////////
                 ngx_http_finalize_request(r, NGX_HTTP_BAD_REQUEST);
             }
 
@@ -1322,7 +1317,6 @@ ngx_http_process_request_uri(ngx_http_request_t *r)
 static void
 ngx_http_process_request_headers(ngx_event_t *rev)
 {
-    //printf("ngx_http_process_request_headers\n");
     u_char                     *p;
     size_t                      len;
     ssize_t                     n;
@@ -1413,6 +1407,7 @@ ngx_http_process_request_headers(ngx_event_t *rev)
             if (r->invalid_header && cscf->ignore_invalid_headers) {
 
                 /* there was error while a header line parsing */
+
                 ngx_log_error(NGX_LOG_INFO, c->log, 0,
                               "client sent invalid header line: \"%*s\"",
                               r->header_end - r->header_name_start,
@@ -1510,7 +1505,6 @@ ngx_http_process_request_headers(ngx_event_t *rev)
 static ssize_t
 ngx_http_read_request_header(ngx_http_request_t *r)
 {
-    //printf("ngx_http_read_request_header\n");
     ssize_t                    n;
     ngx_event_t               *rev;
     ngx_connection_t          *c;
@@ -1522,16 +1516,13 @@ ngx_http_read_request_header(ngx_http_request_t *r)
     n = r->header_in->last - r->header_in->pos;
 
     if (n > 0) {
-        //printf("RETURN!!\n");
         return n;
     }
 
     if (rev->ready) {
-        //printf("RECV!!\n");
         n = c->recv(c, r->header_in->last,
                     r->header_in->end - r->header_in->last);
     } else {
-        //printf("AGAIN!!\n");
         n = NGX_AGAIN;
     }
 
@@ -3215,7 +3206,6 @@ ngx_http_set_keepalive(ngx_http_request_t *r)
 static void
 ngx_http_keepalive_handler(ngx_event_t *rev)
 {
-    //printf("ngx_http_keepalive_handler()\n");
     size_t             size;
     ssize_t            n;
     ngx_buf_t         *b;
@@ -3280,7 +3270,6 @@ ngx_http_keepalive_handler(ngx_event_t *rev)
     c->log_error = NGX_ERROR_IGNORE_ECONNRESET;
     ngx_set_socket_errno(0);
 
-    
     n = c->recv(c, b->last, size);
     c->log_error = NGX_ERROR_INFO;
 

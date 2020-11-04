@@ -1,6 +1,6 @@
 
 CC =	cc
-CFLAGS =  -pipe  -O -W -Wall -Wpointer-arith -Wno-unused-parameter -Werror -g -I src/liburing/src/include/ -L src/liburing/src/
+CFLAGS =  -pipe  -O -W -Wall -Wpointer-arith -Wno-unused-parameter -Werror -g -I src/liburing/src/include/ -L src/liburing/src/ 
 CPP =	cc -E
 LINK =	$(CC)
 
@@ -9,9 +9,12 @@ ALL_INCS = -I src/core \
 	-I src/event \
 	-I src/event/modules \
 	-I src/os/unix \
+	-I ../pcre-8.44 \
+	-I ../zlib-1.2.11 \
 	-I objs \
 	-I src/http \
-	-I src/http/modules
+	-I src/http/modules \
+	-I src/stream
 
 
 CORE_DEPS = src/core/nginx.h \
@@ -73,7 +76,9 @@ CORE_DEPS = src/core/nginx.h \
 	src/os/unix/ngx_process_cycle.h \
 	src/os/unix/ngx_linux_config.h \
 	src/os/unix/ngx_linux.h \
+	src/event/ngx_event_openssl.h \
 	src/core/ngx_regex.h \
+	../pcre-8.44/pcre.h \
 	objs/ngx_auto_config.h
 
 
@@ -81,6 +86,8 @@ CORE_INCS = -I src/core \
 	-I src/event \
 	-I src/event/modules \
 	-I src/os/unix \
+	-I ../pcre-8.44 \
+	-I ../zlib-1.2.11 \
 	-I objs
 
 
@@ -93,11 +100,22 @@ HTTP_DEPS = src/http/ngx_http.h \
 	src/http/ngx_http_script.h \
 	src/http/ngx_http_upstream.h \
 	src/http/ngx_http_upstream_round_robin.h \
-	src/http/modules/ngx_http_ssi_filter_module.h
+	src/http/modules/ngx_http_ssi_filter_module.h \
+	src/http/modules/ngx_http_ssl_module.h
 
 
 HTTP_INCS = -I src/http \
 	-I src/http/modules
+
+
+STREAM_DEPS = src/stream/ngx_stream.h \
+	src/stream/ngx_stream_variables.h \
+	src/stream/ngx_stream_script.h \
+	src/stream/ngx_stream_upstream.h \
+	src/stream/ngx_stream_upstream_round_robin.h
+
+
+STREAM_INCS = -I src/stream
 
 
 build:	binary modules manpage
@@ -170,7 +188,10 @@ objs/nginx:	objs/src/core/nginx.o \
 	objs/src/os/unix/ngx_process_cycle.o \
 	objs/src/os/unix/ngx_linux_init.o \
 	objs/src/event/modules/ngx_epoll_module.o \
+	objs/src/event/modules/ngx_uring_module.o \
 	objs/src/os/unix/ngx_linux_sendfile_chain.o \
+	objs/src/event/ngx_event_openssl.o \
+	objs/src/event/ngx_event_openssl_stapling.o \
 	objs/src/core/ngx_regex.o \
 	objs/src/http/ngx_http.o \
 	objs/src/http/ngx_http_core_module.o \
@@ -210,12 +231,12 @@ objs/nginx:	objs/src/core/nginx.o \
 	objs/src/http/modules/ngx_http_split_clients_module.o \
 	objs/src/http/modules/ngx_http_referer_module.o \
 	objs/src/http/modules/ngx_http_rewrite_module.o \
+	objs/src/http/modules/ngx_http_ssl_module.o \
 	objs/src/http/modules/ngx_http_proxy_module.o \
 	objs/src/http/modules/ngx_http_fastcgi_module.o \
 	objs/src/http/modules/ngx_http_uwsgi_module.o \
 	objs/src/http/modules/ngx_http_scgi_module.o \
 	objs/src/http/modules/ngx_http_memcached_module.o \
-	objs/src/http/modules/ngx_http_empty_gif_module.o \
 	objs/src/http/modules/ngx_http_browser_module.o \
 	objs/src/http/modules/ngx_http_upstream_hash_module.o \
 	objs/src/http/modules/ngx_http_upstream_ip_hash_module.o \
@@ -223,7 +244,29 @@ objs/nginx:	objs/src/core/nginx.o \
 	objs/src/http/modules/ngx_http_upstream_random_module.o \
 	objs/src/http/modules/ngx_http_upstream_keepalive_module.o \
 	objs/src/http/modules/ngx_http_upstream_zone_module.o \
-	objs/ngx_modules.o
+	objs/src/stream/ngx_stream.o \
+	objs/src/stream/ngx_stream_variables.o \
+	objs/src/stream/ngx_stream_script.o \
+	objs/src/stream/ngx_stream_handler.o \
+	objs/src/stream/ngx_stream_core_module.o \
+	objs/src/stream/ngx_stream_log_module.o \
+	objs/src/stream/ngx_stream_proxy_module.o \
+	objs/src/stream/ngx_stream_upstream.o \
+	objs/src/stream/ngx_stream_upstream_round_robin.o \
+	objs/src/stream/ngx_stream_write_filter_module.o \
+	objs/src/stream/ngx_stream_limit_conn_module.o \
+	objs/src/stream/ngx_stream_access_module.o \
+	objs/src/stream/ngx_stream_geo_module.o \
+	objs/src/stream/ngx_stream_map_module.o \
+	objs/src/stream/ngx_stream_split_clients_module.o \
+	objs/src/stream/ngx_stream_return_module.o \
+	objs/src/stream/ngx_stream_upstream_hash_module.o \
+	objs/src/stream/ngx_stream_upstream_least_conn_module.o \
+	objs/src/stream/ngx_stream_upstream_random_module.o \
+	objs/src/stream/ngx_stream_upstream_zone_module.o \
+	objs/ngx_modules.o \
+	../pcre-8.44/.libs/libpcre.a \
+	../zlib-1.2.11/libz.a
 
 	$(LINK) -o objs/nginx \
 	objs/src/core/nginx.o \
@@ -292,7 +335,10 @@ objs/nginx:	objs/src/core/nginx.o \
 	objs/src/os/unix/ngx_process_cycle.o \
 	objs/src/os/unix/ngx_linux_init.o \
 	objs/src/event/modules/ngx_epoll_module.o \
+	objs/src/event/modules/ngx_uring_module.o \
 	objs/src/os/unix/ngx_linux_sendfile_chain.o \
+	objs/src/event/ngx_event_openssl.o \
+	objs/src/event/ngx_event_openssl_stapling.o \
 	objs/src/core/ngx_regex.o \
 	objs/src/http/ngx_http.o \
 	objs/src/http/ngx_http_core_module.o \
@@ -332,12 +378,12 @@ objs/nginx:	objs/src/core/nginx.o \
 	objs/src/http/modules/ngx_http_split_clients_module.o \
 	objs/src/http/modules/ngx_http_referer_module.o \
 	objs/src/http/modules/ngx_http_rewrite_module.o \
+	objs/src/http/modules/ngx_http_ssl_module.o \
 	objs/src/http/modules/ngx_http_proxy_module.o \
 	objs/src/http/modules/ngx_http_fastcgi_module.o \
 	objs/src/http/modules/ngx_http_uwsgi_module.o \
 	objs/src/http/modules/ngx_http_scgi_module.o \
 	objs/src/http/modules/ngx_http_memcached_module.o \
-	objs/src/http/modules/ngx_http_empty_gif_module.o \
 	objs/src/http/modules/ngx_http_browser_module.o \
 	objs/src/http/modules/ngx_http_upstream_hash_module.o \
 	objs/src/http/modules/ngx_http_upstream_ip_hash_module.o \
@@ -345,8 +391,29 @@ objs/nginx:	objs/src/core/nginx.o \
 	objs/src/http/modules/ngx_http_upstream_random_module.o \
 	objs/src/http/modules/ngx_http_upstream_keepalive_module.o \
 	objs/src/http/modules/ngx_http_upstream_zone_module.o \
+	objs/src/stream/ngx_stream.o \
+	objs/src/stream/ngx_stream_variables.o \
+	objs/src/stream/ngx_stream_script.o \
+	objs/src/stream/ngx_stream_handler.o \
+	objs/src/stream/ngx_stream_core_module.o \
+	objs/src/stream/ngx_stream_log_module.o \
+	objs/src/stream/ngx_stream_proxy_module.o \
+	objs/src/stream/ngx_stream_upstream.o \
+	objs/src/stream/ngx_stream_upstream_round_robin.o \
+	objs/src/stream/ngx_stream_write_filter_module.o \
+	objs/src/stream/ngx_stream_limit_conn_module.o \
+	objs/src/stream/ngx_stream_access_module.o \
+	objs/src/stream/ngx_stream_geo_module.o \
+	objs/src/stream/ngx_stream_map_module.o \
+	objs/src/stream/ngx_stream_split_clients_module.o \
+	objs/src/stream/ngx_stream_return_module.o \
+	objs/src/stream/ngx_stream_upstream_hash_module.o \
+	objs/src/stream/ngx_stream_upstream_least_conn_module.o \
+	objs/src/stream/ngx_stream_upstream_random_module.o \
+	objs/src/stream/ngx_stream_upstream_zone_module.o \
 	objs/ngx_modules.o \
-	-ldl -lpthread -lcrypt -lpcre -lz -luring \
+	-I src/liburing/src/include/ -L src/liburing/src/ \
+	-ldl -lpthread -lcrypt ../pcre-8.44/.libs/libpcre.a -lssl -lcrypto -ldl -lpthread ../zlib-1.2.11/libz.a -luring \
 	-Wl,-E
 	
 
@@ -817,9 +884,15 @@ objs/src/os/unix/ngx_linux_init.o:	$(CORE_DEPS) \
 
 objs/src/event/modules/ngx_epoll_module.o:	$(CORE_DEPS) \
 	src/event/modules/ngx_epoll_module.c
-	$(CC) -v -c $(CFLAGS) $(CORE_INCS) \
+	$(CC) -c $(CFLAGS) $(CORE_INCS) \
 		-o objs/src/event/modules/ngx_epoll_module.o \
 		src/event/modules/ngx_epoll_module.c
+
+objs/src/event/modules/ngx_uring_module.o:	$(CORE_DEPS) \
+	src/event/modules/ngx_uring_module.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) \
+		-o objs/src/event/modules/ngx_uring_module.o \
+		src/event/modules/ngx_uring_module.c
 
 
 objs/src/os/unix/ngx_linux_sendfile_chain.o:	$(CORE_DEPS) \
@@ -827,6 +900,20 @@ objs/src/os/unix/ngx_linux_sendfile_chain.o:	$(CORE_DEPS) \
 	$(CC) -c $(CFLAGS) $(CORE_INCS) \
 		-o objs/src/os/unix/ngx_linux_sendfile_chain.o \
 		src/os/unix/ngx_linux_sendfile_chain.c
+
+
+objs/src/event/ngx_event_openssl.o:	$(CORE_DEPS) \
+	src/event/ngx_event_openssl.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) \
+		-o objs/src/event/ngx_event_openssl.o \
+		src/event/ngx_event_openssl.c
+
+
+objs/src/event/ngx_event_openssl_stapling.o:	$(CORE_DEPS) \
+	src/event/ngx_event_openssl_stapling.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) \
+		-o objs/src/event/ngx_event_openssl_stapling.o \
+		src/event/ngx_event_openssl_stapling.c
 
 
 objs/src/core/ngx_regex.o:	$(CORE_DEPS) \
@@ -1102,6 +1189,13 @@ objs/src/http/modules/ngx_http_rewrite_module.o:	$(CORE_DEPS) $(HTTP_DEPS) \
 		src/http/modules/ngx_http_rewrite_module.c
 
 
+objs/src/http/modules/ngx_http_ssl_module.o:	$(CORE_DEPS) $(HTTP_DEPS) \
+	src/http/modules/ngx_http_ssl_module.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) $(HTTP_INCS) \
+		-o objs/src/http/modules/ngx_http_ssl_module.o \
+		src/http/modules/ngx_http_ssl_module.c
+
+
 objs/src/http/modules/ngx_http_proxy_module.o:	$(CORE_DEPS) $(HTTP_DEPS) \
 	src/http/modules/ngx_http_proxy_module.c
 	$(CC) -c $(CFLAGS) $(CORE_INCS) $(HTTP_INCS) \
@@ -1135,13 +1229,6 @@ objs/src/http/modules/ngx_http_memcached_module.o:	$(CORE_DEPS) $(HTTP_DEPS) \
 	$(CC) -c $(CFLAGS) $(CORE_INCS) $(HTTP_INCS) \
 		-o objs/src/http/modules/ngx_http_memcached_module.o \
 		src/http/modules/ngx_http_memcached_module.c
-
-
-objs/src/http/modules/ngx_http_empty_gif_module.o:	$(CORE_DEPS) $(HTTP_DEPS) \
-	src/http/modules/ngx_http_empty_gif_module.c
-	$(CC) -c $(CFLAGS) $(CORE_INCS) $(HTTP_INCS) \
-		-o objs/src/http/modules/ngx_http_empty_gif_module.o \
-		src/http/modules/ngx_http_empty_gif_module.c
 
 
 objs/src/http/modules/ngx_http_browser_module.o:	$(CORE_DEPS) $(HTTP_DEPS) \
@@ -1193,61 +1280,222 @@ objs/src/http/modules/ngx_http_upstream_zone_module.o:	$(CORE_DEPS) $(HTTP_DEPS)
 		src/http/modules/ngx_http_upstream_zone_module.c
 
 
+objs/src/stream/ngx_stream.o:	$(CORE_DEPS) $(STREAM_DEPS) \
+	src/stream/ngx_stream.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) $(STREAM_INCS) \
+		-o objs/src/stream/ngx_stream.o \
+		src/stream/ngx_stream.c
+
+
+objs/src/stream/ngx_stream_variables.o:	$(CORE_DEPS) $(STREAM_DEPS) \
+	src/stream/ngx_stream_variables.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) $(STREAM_INCS) \
+		-o objs/src/stream/ngx_stream_variables.o \
+		src/stream/ngx_stream_variables.c
+
+
+objs/src/stream/ngx_stream_script.o:	$(CORE_DEPS) $(STREAM_DEPS) \
+	src/stream/ngx_stream_script.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) $(STREAM_INCS) \
+		-o objs/src/stream/ngx_stream_script.o \
+		src/stream/ngx_stream_script.c
+
+
+objs/src/stream/ngx_stream_handler.o:	$(CORE_DEPS) $(STREAM_DEPS) \
+	src/stream/ngx_stream_handler.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) $(STREAM_INCS) \
+		-o objs/src/stream/ngx_stream_handler.o \
+		src/stream/ngx_stream_handler.c
+
+
+objs/src/stream/ngx_stream_core_module.o:	$(CORE_DEPS) $(STREAM_DEPS) \
+	src/stream/ngx_stream_core_module.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) $(STREAM_INCS) \
+		-o objs/src/stream/ngx_stream_core_module.o \
+		src/stream/ngx_stream_core_module.c
+
+
+objs/src/stream/ngx_stream_log_module.o:	$(CORE_DEPS) $(STREAM_DEPS) \
+	src/stream/ngx_stream_log_module.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) $(STREAM_INCS) \
+		-o objs/src/stream/ngx_stream_log_module.o \
+		src/stream/ngx_stream_log_module.c
+
+
+objs/src/stream/ngx_stream_proxy_module.o:	$(CORE_DEPS) $(STREAM_DEPS) \
+	src/stream/ngx_stream_proxy_module.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) $(STREAM_INCS) \
+		-o objs/src/stream/ngx_stream_proxy_module.o \
+		src/stream/ngx_stream_proxy_module.c
+
+
+objs/src/stream/ngx_stream_upstream.o:	$(CORE_DEPS) $(STREAM_DEPS) \
+	src/stream/ngx_stream_upstream.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) $(STREAM_INCS) \
+		-o objs/src/stream/ngx_stream_upstream.o \
+		src/stream/ngx_stream_upstream.c
+
+
+objs/src/stream/ngx_stream_upstream_round_robin.o:	$(CORE_DEPS) $(STREAM_DEPS) \
+	src/stream/ngx_stream_upstream_round_robin.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) $(STREAM_INCS) \
+		-o objs/src/stream/ngx_stream_upstream_round_robin.o \
+		src/stream/ngx_stream_upstream_round_robin.c
+
+
+objs/src/stream/ngx_stream_write_filter_module.o:	$(CORE_DEPS) $(STREAM_DEPS) \
+	src/stream/ngx_stream_write_filter_module.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) $(STREAM_INCS) \
+		-o objs/src/stream/ngx_stream_write_filter_module.o \
+		src/stream/ngx_stream_write_filter_module.c
+
+
+objs/src/stream/ngx_stream_limit_conn_module.o:	$(CORE_DEPS) $(STREAM_DEPS) \
+	src/stream/ngx_stream_limit_conn_module.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) $(STREAM_INCS) \
+		-o objs/src/stream/ngx_stream_limit_conn_module.o \
+		src/stream/ngx_stream_limit_conn_module.c
+
+
+objs/src/stream/ngx_stream_access_module.o:	$(CORE_DEPS) $(STREAM_DEPS) \
+	src/stream/ngx_stream_access_module.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) $(STREAM_INCS) \
+		-o objs/src/stream/ngx_stream_access_module.o \
+		src/stream/ngx_stream_access_module.c
+
+
+objs/src/stream/ngx_stream_geo_module.o:	$(CORE_DEPS) $(STREAM_DEPS) \
+	src/stream/ngx_stream_geo_module.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) $(STREAM_INCS) \
+		-o objs/src/stream/ngx_stream_geo_module.o \
+		src/stream/ngx_stream_geo_module.c
+
+
+objs/src/stream/ngx_stream_map_module.o:	$(CORE_DEPS) $(STREAM_DEPS) \
+	src/stream/ngx_stream_map_module.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) $(STREAM_INCS) \
+		-o objs/src/stream/ngx_stream_map_module.o \
+		src/stream/ngx_stream_map_module.c
+
+
+objs/src/stream/ngx_stream_split_clients_module.o:	$(CORE_DEPS) $(STREAM_DEPS) \
+	src/stream/ngx_stream_split_clients_module.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) $(STREAM_INCS) \
+		-o objs/src/stream/ngx_stream_split_clients_module.o \
+		src/stream/ngx_stream_split_clients_module.c
+
+
+objs/src/stream/ngx_stream_return_module.o:	$(CORE_DEPS) $(STREAM_DEPS) \
+	src/stream/ngx_stream_return_module.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) $(STREAM_INCS) \
+		-o objs/src/stream/ngx_stream_return_module.o \
+		src/stream/ngx_stream_return_module.c
+
+
+objs/src/stream/ngx_stream_upstream_hash_module.o:	$(CORE_DEPS) $(STREAM_DEPS) \
+	src/stream/ngx_stream_upstream_hash_module.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) $(STREAM_INCS) \
+		-o objs/src/stream/ngx_stream_upstream_hash_module.o \
+		src/stream/ngx_stream_upstream_hash_module.c
+
+
+objs/src/stream/ngx_stream_upstream_least_conn_module.o:	$(CORE_DEPS) $(STREAM_DEPS) \
+	src/stream/ngx_stream_upstream_least_conn_module.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) $(STREAM_INCS) \
+		-o objs/src/stream/ngx_stream_upstream_least_conn_module.o \
+		src/stream/ngx_stream_upstream_least_conn_module.c
+
+
+objs/src/stream/ngx_stream_upstream_random_module.o:	$(CORE_DEPS) $(STREAM_DEPS) \
+	src/stream/ngx_stream_upstream_random_module.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) $(STREAM_INCS) \
+		-o objs/src/stream/ngx_stream_upstream_random_module.o \
+		src/stream/ngx_stream_upstream_random_module.c
+
+
+objs/src/stream/ngx_stream_upstream_zone_module.o:	$(CORE_DEPS) $(STREAM_DEPS) \
+	src/stream/ngx_stream_upstream_zone_module.c
+	$(CC) -c $(CFLAGS) $(CORE_INCS) $(STREAM_INCS) \
+		-o objs/src/stream/ngx_stream_upstream_zone_module.o \
+		src/stream/ngx_stream_upstream_zone_module.c
+
+
+../pcre-8.44/pcre.h:	../pcre-8.44/Makefile
+
+../pcre-8.44/Makefile:	objs/Makefile
+	cd ../pcre-8.44 \
+	&& if [ -f Makefile ]; then $(MAKE) distclean; fi \
+	&& CC="$(CC)" CFLAGS="-O2 -fomit-frame-pointer -pipe " \
+	./configure --disable-shared 
+
+../pcre-8.44/.libs/libpcre.a:	../pcre-8.44/Makefile
+	cd ../pcre-8.44 \
+	&& $(MAKE) libpcre.la
+
+
+../zlib-1.2.11/libz.a:	objs/Makefile
+	cd ../zlib-1.2.11 \
+	&& $(MAKE) distclean \
+	&& CFLAGS="-O2 -fomit-frame-pointer -pipe " CC="$(CC)" \
+		./configure \
+	&& $(MAKE) libz.a
+
+
 manpage:	objs/nginx.8
 
 objs/nginx.8:	man/nginx.8 objs/ngx_auto_config.h
 	sed -e "s|%%PREFIX%%|/usr/local/nginx|" \
-		-e "s|%%PID_PATH%%|/usr/local/nginx/logs/nginx.pid|" \
-		-e "s|%%CONF_PATH%%|/usr/local/nginx/conf/nginx.conf|" \
+		-e "s|%%PID_PATH%%|/usr/local/nginx/nginx.pid|" \
+		-e "s|%%CONF_PATH%%|/usr/local/nginx/nginx.conf|" \
 		-e "s|%%ERROR_LOG_PATH%%|/usr/local/nginx/logs/error.log|" \
 		< man/nginx.8 > $@
 
 install:	build 
 	test -d '$(DESTDIR)/usr/local/nginx' || mkdir -p '$(DESTDIR)/usr/local/nginx'
 
-	test -d '$(DESTDIR)/usr/local/nginx/sbin' \
-		|| mkdir -p '$(DESTDIR)/usr/local/nginx/sbin'
-	test ! -f '$(DESTDIR)/usr/local/nginx/sbin/nginx' \
-		|| mv '$(DESTDIR)/usr/local/nginx/sbin/nginx' \
-			'$(DESTDIR)/usr/local/nginx/sbin/nginx.old'
-	cp objs/nginx '$(DESTDIR)/usr/local/nginx/sbin/nginx'
+	test -d '$(DESTDIR)/usr/local/nginx' \
+		|| mkdir -p '$(DESTDIR)/usr/local/nginx'
+	test ! -f '$(DESTDIR)/usr/local/nginx/nginx' \
+		|| mv '$(DESTDIR)/usr/local/nginx/nginx' \
+			'$(DESTDIR)/usr/local/nginx/nginx.old'
+	cp objs/nginx '$(DESTDIR)/usr/local/nginx/nginx'
 
-	test -d '$(DESTDIR)/usr/local/nginx/conf' \
-		|| mkdir -p '$(DESTDIR)/usr/local/nginx/conf'
+	test -d '$(DESTDIR)/usr/local/nginx' \
+		|| mkdir -p '$(DESTDIR)/usr/local/nginx'
 
-	cp conf/koi-win '$(DESTDIR)/usr/local/nginx/conf'
-	cp conf/koi-utf '$(DESTDIR)/usr/local/nginx/conf'
-	cp conf/win-utf '$(DESTDIR)/usr/local/nginx/conf'
+	cp conf/koi-win '$(DESTDIR)/usr/local/nginx'
+	cp conf/koi-utf '$(DESTDIR)/usr/local/nginx'
+	cp conf/win-utf '$(DESTDIR)/usr/local/nginx'
 
-	test -f '$(DESTDIR)/usr/local/nginx/conf/mime.types' \
-		|| cp conf/mime.types '$(DESTDIR)/usr/local/nginx/conf'
-	cp conf/mime.types '$(DESTDIR)/usr/local/nginx/conf/mime.types.default'
+	test -f '$(DESTDIR)/usr/local/nginx/mime.types' \
+		|| cp conf/mime.types '$(DESTDIR)/usr/local/nginx'
+	cp conf/mime.types '$(DESTDIR)/usr/local/nginx/mime.types.default'
 
-	test -f '$(DESTDIR)/usr/local/nginx/conf/fastcgi_params' \
-		|| cp conf/fastcgi_params '$(DESTDIR)/usr/local/nginx/conf'
+	test -f '$(DESTDIR)/usr/local/nginx/fastcgi_params' \
+		|| cp conf/fastcgi_params '$(DESTDIR)/usr/local/nginx'
 	cp conf/fastcgi_params \
-		'$(DESTDIR)/usr/local/nginx/conf/fastcgi_params.default'
+		'$(DESTDIR)/usr/local/nginx/fastcgi_params.default'
 
-	test -f '$(DESTDIR)/usr/local/nginx/conf/fastcgi.conf' \
-		|| cp conf/fastcgi.conf '$(DESTDIR)/usr/local/nginx/conf'
-	cp conf/fastcgi.conf '$(DESTDIR)/usr/local/nginx/conf/fastcgi.conf.default'
+	test -f '$(DESTDIR)/usr/local/nginx/fastcgi.conf' \
+		|| cp conf/fastcgi.conf '$(DESTDIR)/usr/local/nginx'
+	cp conf/fastcgi.conf '$(DESTDIR)/usr/local/nginx/fastcgi.conf.default'
 
-	test -f '$(DESTDIR)/usr/local/nginx/conf/uwsgi_params' \
-		|| cp conf/uwsgi_params '$(DESTDIR)/usr/local/nginx/conf'
+	test -f '$(DESTDIR)/usr/local/nginx/uwsgi_params' \
+		|| cp conf/uwsgi_params '$(DESTDIR)/usr/local/nginx'
 	cp conf/uwsgi_params \
-		'$(DESTDIR)/usr/local/nginx/conf/uwsgi_params.default'
+		'$(DESTDIR)/usr/local/nginx/uwsgi_params.default'
 
-	test -f '$(DESTDIR)/usr/local/nginx/conf/scgi_params' \
-		|| cp conf/scgi_params '$(DESTDIR)/usr/local/nginx/conf'
+	test -f '$(DESTDIR)/usr/local/nginx/scgi_params' \
+		|| cp conf/scgi_params '$(DESTDIR)/usr/local/nginx'
 	cp conf/scgi_params \
-		'$(DESTDIR)/usr/local/nginx/conf/scgi_params.default'
+		'$(DESTDIR)/usr/local/nginx/scgi_params.default'
 
-	test -f '$(DESTDIR)/usr/local/nginx/conf/nginx.conf' \
-		|| cp conf/nginx.conf '$(DESTDIR)/usr/local/nginx/conf/nginx.conf'
-	cp conf/nginx.conf '$(DESTDIR)/usr/local/nginx/conf/nginx.conf.default'
+	test -f '$(DESTDIR)/usr/local/nginx/nginx.conf' \
+		|| cp conf/nginx.conf '$(DESTDIR)/usr/local/nginx/nginx.conf'
+	cp conf/nginx.conf '$(DESTDIR)/usr/local/nginx/nginx.conf.default'
 
-	test -d '$(DESTDIR)/usr/local/nginx/logs' \
-		|| mkdir -p '$(DESTDIR)/usr/local/nginx/logs'
+	test -d '$(DESTDIR)/usr/local/nginx' \
+		|| mkdir -p '$(DESTDIR)/usr/local/nginx'
 
 	test -d '$(DESTDIR)/usr/local/nginx/logs' \
 		|| mkdir -p '$(DESTDIR)/usr/local/nginx/logs'

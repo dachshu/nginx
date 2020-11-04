@@ -17,7 +17,6 @@ static void ngx_close_accepted_connection(ngx_connection_t *c);
 void
 ngx_event_accept(ngx_event_t *ev)
 {
-    //printf("accept new client!!\n");
     socklen_t          socklen;
     ngx_err_t          err;
     ngx_log_t         *log;
@@ -57,22 +56,22 @@ ngx_event_accept(ngx_event_t *ev)
         socklen = sizeof(ngx_sockaddr_t);
 
         //if(NGX_URING)
-        if(1)
+        if(ngx_event_flags & NGX_USE_URING_EVENT)
         {
             s = ev->uring_res;
             sa.sockaddr = *(lc->sockaddr);
             socklen = lc->socklen;
+        }else{
+            #if (NGX_HAVE_ACCEPT4)
+            if (use_accept4) {
+                s = accept4(lc->fd, &sa.sockaddr, &socklen, SOCK_NONBLOCK);
+            } else {
+                s = accept(lc->fd, &sa.sockaddr, &socklen);
+            }
+            #else
+                s = accept(lc->fd, &sa.sockaddr, &socklen);
+            #endif
         } 
-
-// #if (NGX_HAVE_ACCEPT4)
-//         if (use_accept4) {
-//             s = accept4(lc->fd, &sa.sockaddr, &socklen, SOCK_NONBLOCK);
-//         } else {
-//             s = accept(lc->fd, &sa.sockaddr, &socklen);
-//         }
-// #else
-//         s = accept(lc->fd, &sa.sockaddr, &socklen);
-// #endif
 
         if (s == (ngx_socket_t) -1) {
             err = ngx_socket_errno;

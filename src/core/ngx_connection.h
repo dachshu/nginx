@@ -121,7 +121,6 @@ typedef enum {
 #define NGX_HTTP_V2_BUFFERED   0x02
 
 
-
 struct ngx_connection_s {
     void               *data;
     ngx_event_t        *read;
@@ -194,7 +193,6 @@ struct ngx_connection_s {
 #if (NGX_THREADS || NGX_COMPAT)
     ngx_thread_task_t  *sendfile_task;
 #endif
-
 };
 
 

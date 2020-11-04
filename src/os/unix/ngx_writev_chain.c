@@ -185,11 +185,7 @@ ngx_writev(ngx_connection_t *c, ngx_iovec_t *vec)
     ngx_err_t  err;
 
 eintr:
-    // ccc = (char*)vec->iovs[0].iov_base;
-    // printf("writev nelts : %ld , %c\n", vec->count, ccc[17]);
-    // for(i = 0; i < vec->count; ++i){
-    //     printf("iovec len %ld\n", vec->iovs[i].iov_len);
-    // }
+
     n = writev(c->fd, vec->iovs, vec->count);
 
     ngx_log_debug2(NGX_LOG_DEBUG_EVENT, c->log, 0,

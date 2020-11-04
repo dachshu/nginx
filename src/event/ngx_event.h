@@ -142,7 +142,6 @@ struct ngx_event_s {
     size_t              rq_size;
     int                 rq_chain_cnt;
     struct iovec        iovecs[NGX_IOVS_PREALLOCATE];
-
 };
 
 
@@ -240,6 +239,8 @@ extern ngx_uint_t            ngx_use_epoll_rdhup;
  * The event filter is epoll.
  */
 #define NGX_USE_EPOLL_EVENT      0x00000040
+
+#define NGX_USE_URING_EVENT      0x00010000
 
 /*
  * Obsolete.
