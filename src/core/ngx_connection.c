@@ -1152,6 +1152,14 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
 
     wev->write = 1;
 
+#if (NGX_USE_URING_SPLICE)
+    if(ngx_event_flags & NGX_USE_URING_EVENT) {
+        if(pipe(c->write->uring_splice_pipe) < 0){
+            return NULL;
+        }
+    }
+#endif
+
     return c;
 }
 
@@ -1166,6 +1174,13 @@ ngx_free_connection(ngx_connection_t *c)
     if (ngx_cycle->files && ngx_cycle->files[c->fd] == c) {
         ngx_cycle->files[c->fd] = NULL;
     }
+
+#if (NGX_USE_URING_SPLICE)
+    if(ngx_event_flags & NGX_USE_URING_EVENT) {
+        close(c->write->uring_splice_pipe[0]);
+        close(c->write->uring_splice_pipe[1]);
+    }
+#endif
 }
 
 
