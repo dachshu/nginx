@@ -107,6 +107,14 @@ struct ngx_event_s {
     ngx_event_ovlp_t ovlp;
 #endif
 
+#if (NGX_HAVE_URING)
+    int                 uring_res;
+    ngx_uint_t          uring_pending;
+    ssize_t             uring_rq_size;
+    struct iovec        uring_iov[NGX_IOVS_PREALLOCATE];
+    int                 uring_splice_pipe[2];
+#endif
+
     ngx_uint_t       index;
 
     ngx_log_t       *log;
@@ -271,6 +279,11 @@ extern ngx_uint_t            ngx_use_epoll_rdhup;
  */
 #define NGX_USE_VNODE_EVENT      0x00002000
 
+/*
+ * The event filter is io_uring.
+ */
+#define NGX_USE_URING_EVENT      0x00004000
+
 
 /*
  * The event filter is deleted just before the closing file.
@@ -390,6 +403,16 @@ extern ngx_uint_t            ngx_use_epoll_rdhup;
 #define NGX_IOCP_CONNECT     2
 #endif
 
+#if (NGX_HAVE_URING)
+#define NGX_URING_ACCEPT            0
+#define NGX_URING_READ              1
+#define NGX_URING_WRITEV            2
+#define NGX_URING_SPLICE_TO_PIPE    3
+#define NGX_URING_SPLICE_FROM_PIPE  4
+#define NGX_URING_READV             5
+#define NGX_URING_SEND              6
+#define NGX_USE_URING_SPLICE        0
+#endif
 
 #if (NGX_TEST_BUILD_EPOLL)
 #define NGX_EXCLUSIVE_EVENT  0
