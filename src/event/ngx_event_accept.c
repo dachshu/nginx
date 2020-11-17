@@ -55,15 +55,22 @@ ngx_event_accept(ngx_event_t *ev)
     do {
         socklen = sizeof(ngx_sockaddr_t);
 
-#if (NGX_HAVE_ACCEPT4)
-        if (use_accept4) {
-            s = accept4(lc->fd, &sa.sockaddr, &socklen, SOCK_NONBLOCK);
+        if(ngx_event_flags & NGX_USE_URING_EVENT)
+        {
+            s = ev->uring_res;
+            sa.sockaddr = *(lc->sockaddr);
+            socklen = lc->socklen;
         } else {
-            s = accept(lc->fd, &sa.sockaddr, &socklen);
-        }
+#if (NGX_HAVE_ACCEPT4)
+            if (use_accept4) {
+                s = accept4(lc->fd, &sa.sockaddr, &socklen, SOCK_NONBLOCK);
+            } else {
+                s = accept(lc->fd, &sa.sockaddr, &socklen);
+            }
 #else
-        s = accept(lc->fd, &sa.sockaddr, &socklen);
+            s = accept(lc->fd, &sa.sockaddr, &socklen);
 #endif
+        }
 
         if (s == (ngx_socket_t) -1) {
             err = ngx_socket_errno;
