@@ -444,8 +444,10 @@ ngx_http_wait_request_handler(ngx_event_t *rev)
          * We are trying to not hold c->buffer's memory for an idle connection.
          */
 
-        if (ngx_pfree(c->pool, b->start) == NGX_OK) {
-            b->start = NULL;
+        if(!(ngx_event_flags & NGX_USE_URING_EVENT)){
+            if (ngx_pfree(c->pool, b->start) == NGX_OK) {
+                b->start = NULL;
+            }
         }
 
         return;
@@ -3316,14 +3318,16 @@ ngx_http_keepalive_handler(ngx_event_t *rev)
          * Like ngx_http_set_keepalive() we are trying to not hold
          * c->buffer's memory for a keepalive connection.
          */
+        
+        if(!(ngx_event_flags & NGX_USE_URING_EVENT)){
+            if (ngx_pfree(c->pool, b->start) == NGX_OK) {
 
-        if (ngx_pfree(c->pool, b->start) == NGX_OK) {
+                /*
+                * the special note that c->buffer's memory was freed
+                */
 
-            /*
-             * the special note that c->buffer's memory was freed
-             */
-
-            b->pos = NULL;
+                b->pos = NULL;
+            }
         }
 
         return;
