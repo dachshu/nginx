@@ -529,50 +529,6 @@ ngx_uring_writev(ngx_connection_t *c, int nelts, int start_el)
 ngx_chain_t *
 ngx_uring_writev_chain(ngx_connection_t *c, ngx_chain_t *in, off_t limit)
 {
-    // return ngx_linux_sendfile_chain(c, in, limit);
-    // ngx_event_t   *wev;
-
-    // wev = c->write;
-
-    // if(wev->uring_pending && !wev->complete){
-    //     return in;
-    // }
-
-    // if(wev->complete){
-    //     wev->complete = 0;
-    //     wev->uring_pending = 0;
-    //     wev->uring_res = 0;
-    //     wev->ready = 1;
-
-    //     return ngx_linux_sendfile_chain(c, in, limit);
-    // }
-
-    // ngx_uring_info_t    *ui;
-    // struct io_uring_sqe *sqe;
-
-    // ui = ngx_palloc(c->pool, sizeof(ngx_uring_info_t));
-    // ui->conn = c;
-    // ui->ev = NGX_URING_WRITEV;
-
-    // ngx_log_debug2(NGX_LOG_DEBUG_EVENT, ev->log, 0,
-    //         "io_uring prep event: fd:%d op:%d ",
-    //         c->fd, ui->ev);
-    
-    // sqe = io_uring_get_sqe(&ring);
-    // if(sqe == NULL){
-    //     ngx_log_error(NGX_LOG_ALERT, c->log, 0,
-    //               "io_uring_get_sqe() failed");
-    //     return NGX_CHAIN_ERROR;
-    // }
-    // io_uring_prep_nop(sqe);
-    // io_uring_sqe_set_data(sqe, ui);
-
-    // wev->uring_rq_size = 0;
-    // wev->uring_pending = 1;
-    // wev->complete = 0;
-    // wev->ready = 0;
-
-    // return in;
     u_char        *prev;
     ssize_t        n, sent, size;
     off_t          send;
