@@ -7,13 +7,15 @@
 
 
 typedef struct {
-    ngx_uint_t entries;
+    ngx_uint_t  entries;
+    size_t      sendfile_bound;
 } ngx_uring_conf_t;
 
 
 typedef struct {
     ngx_connection_t   *conn;
     ngx_uint_t            ev;
+    void                *buf;
 } ngx_uring_info_t;
 
 
@@ -31,19 +33,23 @@ static void *ngx_uring_create_conf(ngx_cycle_t *cycle);
 static char *ngx_uring_init_conf(ngx_cycle_t *cycle, void *conf);
 
 
-static ngx_int_t ngx_uring_accept(ngx_connection_t *c);
-static ssize_t ngx_uring_recv(ngx_connection_t *c, u_char *buf, size_t size);
-#if (NGX_USE_URING_SPLICE)
-static ngx_chain_t *ngx_uring_sendfile_chain(ngx_connection_t *c, ngx_chain_t *in, off_t limit);
-static ssize_t ngx_uring_splice_sendfile(ngx_connection_t *c, ngx_buf_t *file, size_t size);
-#endif
-ssize_t ngx_uring_writev(ngx_connection_t *c, int nelts, int start_el);
-ngx_chain_t * ngx_uring_writev_chain(ngx_connection_t *c, ngx_chain_t *in, off_t limit);
+ngx_int_t ngx_uring_accept(ngx_connection_t *c);
+ssize_t ngx_uring_recv(ngx_connection_t *c, u_char *buf, size_t size);
 ssize_t ngx_uring_readv_chain(ngx_connection_t *c, ngx_chain_t *chain, off_t limit);
 ssize_t ngx_uring_send(ngx_connection_t *c, u_char *buf, size_t size);
+ngx_chain_t * ngx_uring_writev_chain(ngx_connection_t *c, ngx_chain_t *in, off_t limit);
+ngx_chain_t *ngx_uring_sendfile_chain(ngx_connection_t *c, ngx_chain_t *in, off_t limit);
+static ssize_t ngx_uring_writev(ngx_connection_t *c, int nelts, int start_el);
+#if (NGX_USE_URING_SPLICE)
+static ssize_t ngx_uring_splice_sendfile(ngx_connection_t *c, ngx_buf_t *file, size_t size);
+#else
+static ssize_t ngx_uring_read_sendfile(ngx_connection_t *c, ngx_buf_t *file, size_t size);
+#endif
+
 
 
 static struct io_uring ring;
+static size_t linux_sendfile_bound;
 
 static ngx_str_t      uring_name = ngx_string("io_uring");
 
@@ -54,6 +60,13 @@ static ngx_command_t  ngx_uring_commands[] = {
       ngx_conf_set_num_slot,
       0,
       offsetof(ngx_uring_conf_t, entries),
+      NULL },
+
+    { ngx_string("linux_sendfile_bound"),
+      NGX_EVENT_CONF|NGX_CONF_TAKE1,
+      ngx_conf_set_num_slot,
+      0,
+      offsetof(ngx_uring_conf_t, sendfile_bound),
       NULL },
 
       ngx_null_command
@@ -101,7 +114,7 @@ ngx_os_io_t ngx_uring_io = {
     ngx_uring_send,
     NULL,                   /* udp send */
     NULL,                   /* udp sendmsg chain */
-#if (NGX_USE_URING_SPLICE)
+#if (1)
     ngx_uring_sendfile_chain,
     NGX_IO_SENDFILE
 #else
@@ -133,6 +146,8 @@ ngx_uring_init(ngx_cycle_t *cycle, ngx_msec_t timer)
             return NGX_ERROR;
         }
     }
+
+    linux_sendfile_bound = urcf->sendfile_bound;
 
     ngx_io = ngx_uring_io;
 
@@ -208,16 +223,39 @@ ngx_uring_del_connection(ngx_connection_t *c, ngx_uint_t flags)
 static ngx_int_t
 ngx_uring_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
 {
-    unsigned             head, count;
-    ngx_event_t         *rev, *wev;
-    ngx_connection_t    *c;
-    struct io_uring_cqe *cqe;
-    ngx_uring_info_t    *ui;
+    unsigned                    head, count;
+    ngx_event_t                *rev, *wev;
+    ngx_connection_t           *c;
+    ngx_uring_info_t           *ui;
+    struct io_uring_cqe        *cqe;
+    struct io_uring_sqe        *sqe;
+    struct __kernel_timespec    ts;
+    
 
     /* NGX_TIMER_INFINITE == INFTIM */
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                    "io_uring timer: %M", timer);
+
+    if(timer != NGX_TIMER_INFINITE) {
+        if(timer >= 1000){
+            ts.tv_sec = timer / 1000;
+            ts.tv_nsec = 0;
+        } else{
+            ts.tv_sec = 0;
+            ts.tv_nsec = timer * 1000000;
+        }
+
+        sqe = io_uring_get_sqe(&ring);
+        if(sqe == NULL) {
+            ngx_log_error(NGX_LOG_ALERT, cycle->log, 0,
+                      "io_uring_get_sqe() failed");
+            return NGX_ERROR;
+        }
+
+        io_uring_prep_timeout(sqe, &ts, 1, 0);
+        io_uring_sqe_set_data(sqe, (void*)NGX_URING_TIMEOUT);
+    }
 
     io_uring_submit_and_wait(&ring, 1);
     
@@ -229,7 +267,23 @@ ngx_uring_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
     
     io_uring_for_each_cqe(&ring, head, cqe) {
         ++count;
+
+        if(cqe->user_data == NGX_URING_TIMEOUT) {
+            if(count > 1) continue;
+
+            io_uring_cq_advance(&ring, count);
+
+            if(timer != NGX_TIMER_INFINITE){
+                return NGX_OK;
+            }
+
+            ngx_log_error(NGX_LOG_ALERT, cycle->log, 0,
+                        "invalid timeout event");
+            return NGX_ERROR;
+        }
+        
         ui = (ngx_uring_info_t*)cqe->user_data;
+
         c = ui->conn;
 
         if (c->fd == -1) {
@@ -279,21 +333,27 @@ ngx_uring_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
         case NGX_URING_READ:
         case NGX_URING_READV:{
             ngx_pfree(c->pool, ui);
-            rev->uring_res = cqe->res;
-            rev->ready = 1;
-            rev->complete = 1;
-            rev->available = -1;
+            rev->uring_pending -= 1;
+            rev->uring_res += cqe->res;
 
-            if (flags & NGX_POST_EVENTS) {
-                ngx_post_event(rev, &ngx_posted_events);
-
-            } else {
-                rev->handler(rev);
+            if(rev->uring_pending == 0){
+                rev->complete = 1;
+                rev->ready = 1;
+                rev->available = -1;
+    
+                if (flags & NGX_POST_EVENTS) {
+                    ngx_post_event(rev, &ngx_posted_events);
+    
+                } else {
+                    rev->handler(rev);
+                }
             }
             break;
         }
         case NGX_URING_SEND:
-        case NGX_URING_WRITEV:{
+        case NGX_URING_WRITEV:
+        case NGX_URING_SPLICE_FROM_PIPE:{
+            if(ui->buf) ngx_pfree(c->pool, ui->buf);
             ngx_pfree(c->pool, ui);
             wev->uring_pending -= 1;
             wev->uring_res += cqe->res;
@@ -312,31 +372,12 @@ ngx_uring_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
             }
             break;
         }
+        case NGX_URING_READFILE:
         case NGX_URING_SPLICE_TO_PIPE:{
             ngx_pfree(c->pool, ui);
             break;
         }
-        case NGX_URING_SPLICE_FROM_PIPE:{
-            ngx_pfree(c->pool, ui);
-            wev->uring_pending -= 1;
-            wev->uring_res += cqe->res;
-
-            if(wev->uring_pending == 0) {
-                wev->complete = 1;
-                wev->ready = 1;
-                wev->available = -1;
-
-                if (flags & NGX_POST_EVENTS) {
-                    ngx_post_event(wev, &ngx_posted_events);
-
-                } else {
-                    wev->handler(wev);
-                }
-            }
-            break;
-        }
         default:
-            ngx_pfree(c->pool, ui);
             ngx_log_error(NGX_LOG_ALERT, cycle->log, 0,
                       "io_uring invalid event type");
             return NGX_ERROR;
@@ -347,10 +388,6 @@ ngx_uring_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
     io_uring_cq_advance(&ring, count);
 
     if (count == 0) {
-        if (timer != NGX_TIMER_INFINITE) {
-            return NGX_OK;
-        }
-
         ngx_log_error(NGX_LOG_ALERT, cycle->log, 0,
                       "io_uring_submit_and_wait() returned no events without timeout");
         return NGX_ERROR;
@@ -371,6 +408,7 @@ ngx_uring_create_conf(ngx_cycle_t *cycle)
     }
 
     urcf->entries = NGX_CONF_UNSET;
+    urcf->sendfile_bound = NGX_CONF_UNSET;
 
     return urcf;
 }
@@ -382,12 +420,13 @@ ngx_uring_init_conf(ngx_cycle_t *cycle, void *conf)
     ngx_uring_conf_t *urcf = conf;
 
     ngx_conf_init_uint_value(urcf->entries, 32768);
+    ngx_conf_init_uint_value(urcf->sendfile_bound, 41984);
 
     return NGX_CONF_OK;
 }
 
 
-static ngx_int_t 
+ngx_int_t 
 ngx_uring_accept(ngx_connection_t *c)
 {
     struct io_uring_sqe *sqe;
@@ -409,8 +448,12 @@ ngx_uring_accept(ngx_connection_t *c)
     }
     
     ui = ngx_palloc(c->pool, sizeof(ngx_uring_info_t));
+    if(ui == NULL){
+        return NGX_ERROR;
+    }
     ui->conn = c;
     ui->ev = NGX_URING_ACCEPT;
+    ui->buf = NULL;
 
     ngx_log_debug2(NGX_LOG_DEBUG_EVENT, ev->log, 0,
             "io_uring prep event: fd:%d op:%d ",
@@ -471,8 +514,12 @@ ngx_uring_recv(ngx_connection_t *c, u_char *buf, size_t size)
     }
 
     ui = ngx_palloc(c->pool, sizeof(ngx_uring_info_t));
+    if(ui == NULL){
+        return NGX_ERROR;
+    }
     ui->conn = c;
     ui->ev = NGX_URING_READ;
+    ui->buf = NULL;
 
     ngx_log_debug2(NGX_LOG_DEBUG_EVENT, ev->log, 0,
             "io_uring prep event: fd:%d op:%d ",
@@ -495,18 +542,220 @@ ngx_uring_recv(ngx_connection_t *c, u_char *buf, size_t size)
     return NGX_AGAIN;
 }
 
+ssize_t
+ngx_uring_readv_chain(ngx_connection_t *c, ngx_chain_t *chain, off_t limit)
+{
+    u_char              *prev;
+    ssize_t              n, size;
+    ngx_array_t          vec;
+    ngx_event_t         *rev;
+    struct iovec        *iov;
+    ngx_uring_info_t    *ui;
+    struct io_uring_sqe *sqe;
+
+    rev = c->read;
+
+    if(!rev->complete && rev->uring_pending) {
+        ngx_log_error(NGX_LOG_ALERT, c->log, 0, "second uring_readv_chain post");
+        return NGX_AGAIN;
+    }
+
+    if(rev->complete) {
+        n = rev->uring_res;
+        rev->uring_res = 0;
+        rev->available = 0;
+        rev->uring_pending = 0;
+        rev->complete = 0;
+        
+        if(n == 0){
+            rev->ready = 0;
+            rev->eof = 1;
+            return 0;
+        }
+        if(n < 0){
+            ngx_connection_error(c, 0, "uring_readv() failed");
+            rev->error = 1;
+            return NGX_ERROR;
+        }
+
+        ngx_log_debug3(NGX_LOG_DEBUG_EVENT, c->log, 0,
+                           "uring_readv: fd:%d %ul of %z",
+                           c->fd, n, size);
+
+        return n;
+    }
+
+    prev = NULL;
+    iov = NULL;
+    size = 0;
+
+    vec.elts = rev->uring_iov;
+    vec.nelts = 0;
+    vec.size = sizeof(struct iovec);
+    vec.nalloc = NGX_IOVS_PREALLOCATE;
+    vec.pool = c->pool;
+
+    /* coalesce the neighbouring bufs */
+
+    while (chain) {
+        n = chain->buf->end - chain->buf->last;
+
+        if (limit) {
+            if (size >= limit) {
+                break;
+            }
+
+            if (size + n > limit) {
+                n = (ssize_t) (limit - size);
+            }
+        }
+
+        if (prev == chain->buf->last) {
+            iov->iov_len += n;
+
+        } else {
+            if (vec.nelts >= IOV_MAX) {
+                break;
+            }
+
+            iov = ngx_array_push(&vec);
+            if (iov == NULL) {
+                return NGX_ERROR;
+            }
+
+            iov->iov_base = (void *) chain->buf->last;
+            iov->iov_len = n;
+        }
+
+        size += n;
+        prev = chain->buf->end;
+        chain = chain->next;
+    }
+
+    ngx_log_debug2(NGX_LOG_DEBUG_EVENT, c->log, 0,
+                   "readv: %ui, last:%uz", vec.nelts, iov->iov_len);
+
+    ui = ngx_palloc(c->pool, sizeof(ngx_uring_info_t));
+    if(ui == NULL){
+        return NGX_ERROR;
+    }
+    ui->conn = c;
+    ui->ev = NGX_URING_READV;
+    ui->buf = NULL;
+
+    ngx_log_debug2(NGX_LOG_DEBUG_EVENT, ev->log, 0,
+            "io_uring prep event: fd:%d op:%d ",
+            c->fd, ui->ev);
+    
+    sqe = io_uring_get_sqe(&ring);
+    if(sqe == NULL){
+        ngx_log_error(NGX_LOG_ALERT, c->log, 0,
+                  "io_uring_get_sqe() failed");
+        return NGX_ERROR;
+    }
+
+    io_uring_prep_readv(sqe, c->fd, (struct iovec *) vec.elts, vec.nelts, 0);
+    io_uring_sqe_set_data(sqe, ui);
+
+    rev->complete = 0;
+    rev->ready = 0;
+    rev->uring_pending = 1;
+
+    return NGX_AGAIN;
+}
 
 #define NGX_SENDFILE_MAXSIZE  2147483647L
 
 ssize_t
+ngx_uring_send(ngx_connection_t *c, u_char *buf, size_t size)
+{
+    ssize_t              n;
+    ngx_event_t         *wev;
+    ngx_uring_info_t    *ui;
+    struct io_uring_sqe *sqe;
+
+    wev = c->write;
+
+    if(wev->uring_pending && !wev->complete){
+        return NGX_AGAIN;
+    }
+
+    if(wev->complete){
+        n = wev->uring_res;
+        wev->complete = 0;
+        wev->uring_pending = 0;
+        wev->uring_res = 0;
+        wev->ready = 1;
+
+        ngx_log_debug3(NGX_LOG_DEBUG_EVENT, c->log, 0,
+                       "send: fd:%d %z of %uz", c->fd, n, size);
+        
+        if (n == 0) {
+            ngx_log_error(NGX_LOG_ALERT, c->log, 0, "send() returned zero");
+            wev->ready = 0;
+            return n;
+        }
+
+        if (n > 0) {
+            if (n < (ssize_t) size) {
+                wev->ready = 0;
+            }
+
+            c->sent += n;
+
+            return n;
+        }
+
+
+        wev->error = 1;
+        (void) ngx_connection_error(c, 0, "send() failed");
+        return NGX_ERROR;
+
+    }
+
+    ui = ngx_palloc(c->pool, sizeof(ngx_uring_info_t));
+    if(ui == NULL){
+        return NGX_ERROR;
+    }
+    ui->conn = c;
+    ui->ev = NGX_URING_SEND;
+    ui->buf = NULL;
+
+    ngx_log_debug2(NGX_LOG_DEBUG_EVENT, ev->log, 0,
+            "io_uring prep event: fd:%d op:%d ",
+            c->fd, ui->ev);
+    
+    sqe = io_uring_get_sqe(&ring);
+    if(sqe == NULL){
+        ngx_log_error(NGX_LOG_ALERT, c->log, 0,
+                  "io_uring_get_sqe() failed");
+        return NGX_ERROR;
+    }
+
+    io_uring_prep_send(sqe, c->fd, buf, size, 0);
+    io_uring_sqe_set_data(sqe, ui);
+
+    wev->uring_rq_size = size;
+    wev->uring_pending = 1;
+    wev->complete = 0;
+    wev->ready = 0;
+
+    return NGX_AGAIN;
+}
+
+static ssize_t
 ngx_uring_writev(ngx_connection_t *c, int nelts, int start_el)
 {
     ngx_uring_info_t    *ui;
     struct io_uring_sqe *sqe;
 
     ui = ngx_palloc(c->pool, sizeof(ngx_uring_info_t));
+    if(ui == NULL){
+        return NGX_ERROR;
+    }
     ui->conn = c;
     ui->ev = NGX_URING_WRITEV;
+    ui->buf = NULL;
 
     ngx_log_debug2(NGX_LOG_DEBUG_EVENT, ev->log, 0,
             "io_uring prep event: fd:%d op:%d ",
@@ -643,6 +892,151 @@ ngx_uring_writev_chain(ngx_connection_t *c, ngx_chain_t *in, off_t limit)
 }
 
 #if (NGX_USE_URING_SPLICE)
+static ssize_t
+ngx_uring_splice_sendfile(ngx_connection_t *c, ngx_buf_t *file, size_t size)
+{
+    ngx_uring_info_t    *ui;
+    struct io_uring_sqe *sqe;
+#if (NGX_HAVE_SENDFILE64)
+    off_t      offset;
+#else
+    int32_t    offset;
+#endif
+#if (NGX_HAVE_SENDFILE64)
+    offset = file->file_pos;
+#else
+    offset = (int32_t) file->file_pos;
+#endif
+    
+    ui = ngx_palloc(c->pool, sizeof(ngx_uring_info_t));
+    if(ui == NULL){
+        return NGX_ERROR;
+    }
+    ui->conn = c;
+    ui->ev = NGX_URING_SPLICE_TO_PIPE;
+    ui->buf = NULL;
+
+    ngx_log_debug2(NGX_LOG_DEBUG_EVENT, ev->log, 0,
+            "io_uring prep event: fd:%d op:%d ",
+            c->fd, ui->ev);
+    
+    sqe = io_uring_get_sqe(&ring);
+    if(sqe == NULL){
+        ngx_log_error(NGX_LOG_ALERT, c->log, 0,
+                  "io_uring_get_sqe() failed");
+        return NGX_ERROR;
+    }
+    io_uring_prep_splice(sqe, file->file->fd, offset, 
+                         c->write->uring_splice_pipe[1], -1, size,  SPLICE_F_MOVE | SPLICE_F_MORE);
+    sqe->flags = IOSQE_IO_LINK;
+    io_uring_sqe_set_data(sqe, ui);
+
+
+    ui = ngx_palloc(c->pool, sizeof(ngx_uring_info_t));
+    if(ui == NULL){
+        return NGX_ERROR;
+    }
+    ui->conn = c;
+    ui->ev = NGX_URING_SPLICE_FROM_PIPE;
+    ui->buf = NULL;
+
+    ngx_log_debug2(NGX_LOG_DEBUG_EVENT, ev->log, 0,
+            "io_uring prep event: fd:%d op:%d ",
+            c->fd, ui->ev);
+    
+    sqe = io_uring_get_sqe(&ring);
+    if(sqe == NULL){
+        ngx_log_error(NGX_LOG_ALERT, c->log, 0,
+                  "io_uring_get_sqe() failed");
+        return NGX_ERROR;
+    }
+    io_uring_prep_splice(sqe, c->write->uring_splice_pipe[0], -1, 
+                         c->fd, -1, size, SPLICE_F_MOVE | SPLICE_F_MORE);
+    io_uring_sqe_set_data(sqe, ui);
+
+
+    ngx_log_debug2(NGX_LOG_DEBUG_EVENT, c->log, 0,
+                   "uring_splice_sendfile: @%O %uz", file->file_pos, size);
+
+    return NGX_AGAIN;
+}
+#else
+static ssize_t
+ngx_uring_read_sendfile(ngx_connection_t *c, ngx_buf_t *file, size_t size)
+{
+    ngx_uring_info_t    *ui;
+    struct io_uring_sqe *sqe;
+    void                *buf;
+#if (NGX_HAVE_SENDFILE64)
+    off_t                offset;
+#else
+    int32_t              offset;
+#endif
+#if (NGX_HAVE_SENDFILE64)
+    offset = file->file_pos;
+#else
+    offset = (int32_t) file->file_pos;
+#endif
+
+    buf = ngx_palloc(c->pool, size);
+    if(buf == NULL){
+        return NGX_ERROR;
+    }
+    
+    ui = ngx_palloc(c->pool, sizeof(ngx_uring_info_t));
+    if(ui == NULL){
+        return NGX_ERROR;
+    }
+    ui->conn = c;
+    ui->ev = NGX_URING_READFILE;
+    ui->buf = NULL;
+
+    ngx_log_debug2(NGX_LOG_DEBUG_EVENT, ev->log, 0,
+            "io_uring prep event: fd:%d op:%d ",
+            c->fd, ui->ev);
+    
+    sqe = io_uring_get_sqe(&ring);
+    if(sqe == NULL){
+        ngx_log_error(NGX_LOG_ALERT, c->log, 0,
+                  "io_uring_get_sqe() failed");
+        return NGX_ERROR;
+    }
+
+    io_uring_prep_read(sqe, file->file->fd, buf, size, offset );
+    sqe->flags = IOSQE_IO_LINK;
+    io_uring_sqe_set_data(sqe, ui);
+
+
+    ui = ngx_palloc(c->pool, sizeof(ngx_uring_info_t));
+    if(ui == NULL){
+        return NGX_ERROR;
+    }
+    ui->conn = c;
+    ui->ev = NGX_URING_SEND;
+    ui->buf = buf;
+
+    ngx_log_debug2(NGX_LOG_DEBUG_EVENT, ev->log, 0,
+            "io_uring prep event: fd:%d op:%d ",
+            c->fd, ui->ev);
+    
+    sqe = io_uring_get_sqe(&ring);
+    if(sqe == NULL){
+        ngx_log_error(NGX_LOG_ALERT, c->log, 0,
+                  "io_uring_get_sqe() failed");
+        return NGX_ERROR;
+    }
+    io_uring_prep_send(sqe, c->fd, buf, size, 0);
+    io_uring_sqe_set_data(sqe, ui);
+
+
+    ngx_log_debug2(NGX_LOG_DEBUG_EVENT, c->log, 0,
+                   "uring_splice_sendfile: @%O %uz", file->file_pos, size);
+
+    return NGX_AGAIN;
+}
+#endif
+
+
 ngx_chain_t *
 ngx_uring_sendfile_chain(ngx_connection_t *c, ngx_chain_t *in, off_t limit)
 {
@@ -679,7 +1073,7 @@ ngx_uring_sendfile_chain(ngx_connection_t *c, ngx_chain_t *in, off_t limit)
 
         return in;
     }
-    
+    sent = 0;
     send = 0;
     nelts = 0;
     prev = NULL;
@@ -724,8 +1118,27 @@ ngx_uring_sendfile_chain(ngx_connection_t *c, ngx_chain_t *in, off_t limit)
                 ngx_debug_point();
                 return NGX_CHAIN_ERROR;
             }
+
+            if(file_size >= linux_sendfile_bound) {
+                io_uring_submit(&ring);
+
+                n = ngx_linux_sendfile(c, file, file_size);
+
+                if (n == NGX_ERROR) {
+                    return NGX_CHAIN_ERROR;
+                }
+
+                if(n != NGX_AGAIN){
+                    sent += n;
+                    continue;
+                }
+            }
             
-            n = ngx_uring_splice_sendfile(c, file, file_size);   
+#if (NGX_USE_URING_SPLICE)
+            n = ngx_uring_splice_sendfile(c, file, file_size);
+#else
+            n = ngx_uring_read_sendfile(c, file, file_size); 
+#endif
 
             if (n == NGX_ERROR) {
                 wev->error = 1;
@@ -772,263 +1185,7 @@ ngx_uring_sendfile_chain(ngx_connection_t *c, ngx_chain_t *in, off_t limit)
     wev->uring_pending = pending;
     wev->complete = 0;
     wev->ready = 0;
+    wev->uring_res = sent;
 
     return in;
 }
-
-
-
-static ssize_t
-ngx_uring_splice_sendfile(ngx_connection_t *c, ngx_buf_t *file, size_t size)
-{
-    ngx_uring_info_t    *ui;
-    struct io_uring_sqe *sqe;
-#if (NGX_HAVE_SENDFILE64)
-    off_t      offset;
-#else
-    int32_t    offset;
-#endif
-#if (NGX_HAVE_SENDFILE64)
-    offset = file->file_pos;
-#else
-    offset = (int32_t) file->file_pos;
-#endif
-    
-    ui = ngx_palloc(c->pool, sizeof(ngx_uring_info_t));
-    ui->conn = c;
-    ui->ev = NGX_URING_SPLICE_TO_PIPE;
-
-    ngx_log_debug2(NGX_LOG_DEBUG_EVENT, ev->log, 0,
-            "io_uring prep event: fd:%d op:%d ",
-            c->fd, ui->ev);
-    
-    sqe = io_uring_get_sqe(&ring);
-    if(sqe == NULL){
-        ngx_log_error(NGX_LOG_ALERT, c->log, 0,
-                  "io_uring_get_sqe() failed");
-        return NGX_ERROR;
-    }
-    io_uring_prep_splice(sqe, file->file->fd, offset, 
-                         c->write->uring_splice_pipe[1], -1, size,  SPLICE_F_MOVE | SPLICE_F_MORE);
-    sqe->flags = IOSQE_IO_LINK;
-    io_uring_sqe_set_data(sqe, ui);
-
-
-    ui = ngx_palloc(c->pool, sizeof(ngx_uring_info_t));
-    ui->conn = c;
-    ui->ev = NGX_URING_SPLICE_FROM_PIPE;
-
-    ngx_log_debug2(NGX_LOG_DEBUG_EVENT, ev->log, 0,
-            "io_uring prep event: fd:%d op:%d ",
-            c->fd, ui->ev);
-    
-    sqe = io_uring_get_sqe(&ring);
-    if(sqe == NULL){
-        ngx_log_error(NGX_LOG_ALERT, c->log, 0,
-                  "io_uring_get_sqe() failed");
-        return NGX_ERROR;
-    }
-    io_uring_prep_splice(sqe, c->write->uring_splice_pipe[0], -1, 
-                         c->fd, -1, size, SPLICE_F_MOVE | SPLICE_F_MORE);
-    io_uring_sqe_set_data(sqe, ui);
-
-
-    ngx_log_debug2(NGX_LOG_DEBUG_EVENT, c->log, 0,
-                   "uring_splice_sendfile: @%O %uz", file->file_pos, size);
-
-    return NGX_AGAIN;
-}
-#endif
-
-ssize_t
-ngx_uring_readv_chain(ngx_connection_t *c, ngx_chain_t *chain, off_t limit)
-{
-    u_char              *prev;
-    ssize_t              n, size;
-    ngx_array_t          vec;
-    ngx_event_t         *rev;
-    struct iovec        *iov;
-    ngx_uring_info_t    *ui;
-    struct io_uring_sqe *sqe;
-
-    rev = c->read;
-
-    if(!rev->complete && rev->uring_pending) {
-        ngx_log_error(NGX_LOG_ALERT, c->log, 0, "second uring_readv_chain post");
-        return NGX_AGAIN;
-    }
-
-    if(rev->complete) {
-        n = rev->uring_res;
-        rev->uring_res = 0;
-        rev->available = 0;
-        rev->uring_pending = 0;
-        rev->complete = 0;
-        
-        if(n == 0){
-            rev->ready = 0;
-            rev->eof = 1;
-            return 0;
-        }
-        if(n < 0){
-            ngx_connection_error(c, 0, "uring_readv() failed");
-            rev->error = 1;
-            return NGX_ERROR;
-        }
-
-        ngx_log_debug3(NGX_LOG_DEBUG_EVENT, c->log, 0,
-                           "uring_readv: fd:%d %ul of %z",
-                           c->fd, n, size);
-
-        return n;
-    }
-
-    prev = NULL;
-    iov = NULL;
-    size = 0;
-
-    vec.elts = rev->uring_iov;
-    vec.nelts = 0;
-    vec.size = sizeof(struct iovec);
-    vec.nalloc = NGX_IOVS_PREALLOCATE;
-    vec.pool = c->pool;
-
-    /* coalesce the neighbouring bufs */
-
-    while (chain) {
-        n = chain->buf->end - chain->buf->last;
-
-        if (limit) {
-            if (size >= limit) {
-                break;
-            }
-
-            if (size + n > limit) {
-                n = (ssize_t) (limit - size);
-            }
-        }
-
-        if (prev == chain->buf->last) {
-            iov->iov_len += n;
-
-        } else {
-            if (vec.nelts >= IOV_MAX) {
-                break;
-            }
-
-            iov = ngx_array_push(&vec);
-            if (iov == NULL) {
-                return NGX_ERROR;
-            }
-
-            iov->iov_base = (void *) chain->buf->last;
-            iov->iov_len = n;
-        }
-
-        size += n;
-        prev = chain->buf->end;
-        chain = chain->next;
-    }
-
-    ngx_log_debug2(NGX_LOG_DEBUG_EVENT, c->log, 0,
-                   "readv: %ui, last:%uz", vec.nelts, iov->iov_len);
-
-    ui = ngx_palloc(c->pool, sizeof(ngx_uring_info_t));
-    ui->conn = c;
-    ui->ev = NGX_URING_READV;
-
-    ngx_log_debug2(NGX_LOG_DEBUG_EVENT, ev->log, 0,
-            "io_uring prep event: fd:%d op:%d ",
-            c->fd, ui->ev);
-    
-    sqe = io_uring_get_sqe(&ring);
-    if(sqe == NULL){
-        ngx_log_error(NGX_LOG_ALERT, c->log, 0,
-                  "io_uring_get_sqe() failed");
-        return NGX_ERROR;
-    }
-
-    io_uring_prep_readv(sqe, c->fd, (struct iovec *) vec.elts, vec.nelts, 0);
-    io_uring_sqe_set_data(sqe, ui);
-
-    rev->complete = 0;
-    rev->ready = 0;
-    rev->uring_pending = 1;
-
-    return NGX_AGAIN;
-}
-
-
-ssize_t
-ngx_uring_send(ngx_connection_t *c, u_char *buf, size_t size)
-{
-    ssize_t              n;
-    ngx_event_t         *wev;
-    ngx_uring_info_t    *ui;
-    struct io_uring_sqe *sqe;
-
-    wev = c->write;
-
-    if(wev->uring_pending && !wev->complete){
-        return NGX_AGAIN;
-    }
-
-    if(wev->complete){
-        n = wev->uring_res;
-        wev->complete = 0;
-        wev->uring_pending = 0;
-        wev->uring_res = 0;
-        wev->ready = 1;
-
-        ngx_log_debug3(NGX_LOG_DEBUG_EVENT, c->log, 0,
-                       "send: fd:%d %z of %uz", c->fd, n, size);
-        
-        if (n == 0) {
-            ngx_log_error(NGX_LOG_ALERT, c->log, 0, "send() returned zero");
-            wev->ready = 0;
-            return n;
-        }
-
-        if (n > 0) {
-            if (n < (ssize_t) size) {
-                wev->ready = 0;
-            }
-
-            c->sent += n;
-
-            return n;
-        }
-
-
-        wev->error = 1;
-        (void) ngx_connection_error(c, 0, "send() failed");
-        return NGX_ERROR;
-
-    }
-
-    ui = ngx_palloc(c->pool, sizeof(ngx_uring_info_t));
-    ui->conn = c;
-    ui->ev = NGX_URING_SEND;
-
-    ngx_log_debug2(NGX_LOG_DEBUG_EVENT, ev->log, 0,
-            "io_uring prep event: fd:%d op:%d ",
-            c->fd, ui->ev);
-    
-    sqe = io_uring_get_sqe(&ring);
-    if(sqe == NULL){
-        ngx_log_error(NGX_LOG_ALERT, c->log, 0,
-                  "io_uring_get_sqe() failed");
-        return NGX_ERROR;
-    }
-
-    io_uring_prep_send(sqe, c->fd, buf, size, 0);
-    io_uring_sqe_set_data(sqe, ui);
-
-    wev->uring_rq_size = size;
-    wev->uring_pending = 1;
-    wev->complete = 0;
-    wev->ready = 0;
-
-    return NGX_AGAIN;
-}
-

@@ -10,9 +10,6 @@
 #include <ngx_event.h>
 
 
-static ssize_t ngx_linux_sendfile(ngx_connection_t *c, ngx_buf_t *file,
-    size_t size);
-
 #if (NGX_THREADS)
 #include <ngx_thread_pool.h>
 
@@ -226,7 +223,7 @@ ngx_linux_sendfile_chain(ngx_connection_t *c, ngx_chain_t *in, off_t limit)
 }
 
 
-static ssize_t
+ssize_t
 ngx_linux_sendfile(ngx_connection_t *c, ngx_buf_t *file, size_t size)
 {
 #if (NGX_HAVE_SENDFILE64)

@@ -406,11 +406,13 @@ extern ngx_uint_t            ngx_use_epoll_rdhup;
 #if (NGX_HAVE_URING)
 #define NGX_URING_ACCEPT            0
 #define NGX_URING_READ              1
-#define NGX_URING_WRITEV            2
-#define NGX_URING_SPLICE_TO_PIPE    3
-#define NGX_URING_SPLICE_FROM_PIPE  4
-#define NGX_URING_READV             5
-#define NGX_URING_SEND              6
+#define NGX_URING_READV             2
+#define NGX_URING_SEND              3
+#define NGX_URING_WRITEV            4
+#define NGX_URING_SPLICE_TO_PIPE    5
+#define NGX_URING_SPLICE_FROM_PIPE  6
+#define NGX_URING_READFILE          7
+#define NGX_URING_TIMEOUT           1
 #define NGX_USE_URING_SPLICE        0
 #endif
 
