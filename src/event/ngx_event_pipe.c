@@ -32,6 +32,12 @@ ngx_event_pipe(ngx_event_pipe_t *p, ngx_int_t do_write)
 
             rc = ngx_event_pipe_write_to_downstream(p);
 
+            if(rc == NGX_AGAIN){
+                if(ngx_event_flags & NGX_USE_URING_EVENT){
+                    break;
+                }
+            }
+
             if (rc == NGX_ABORT) {
                 return NGX_ABORT;
             }
@@ -323,6 +329,10 @@ ngx_event_pipe_read_upstream(ngx_event_pipe_t *p)
             if (n == NGX_AGAIN) {
                 if (p->single_buf) {
                     ngx_event_pipe_remove_shadow_links(chain->buf);
+                }
+
+                if(ngx_event_flags & NGX_USE_URING_EVENT){
+                    p->read = 0;
                 }
 
                 break;
@@ -698,6 +708,12 @@ ngx_event_pipe_write_to_downstream(ngx_event_pipe_t *p)
         if (rc == NGX_ERROR) {
             p->downstream_error = 1;
             return ngx_event_pipe_drain_chains(p);
+        }
+
+        if(rc == NGX_AGAIN) {
+            if(ngx_event_flags & NGX_USE_URING_EVENT) {
+                return NGX_AGAIN;
+            }
         }
 
         for (cl = p->free; cl; cl = cl->next) {
