@@ -85,11 +85,13 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
         }
     }
 
-    if (ngx_nonblocking(s) == -1) {
-        ngx_log_error(NGX_LOG_ALERT, pc->log, ngx_socket_errno,
-                      ngx_nonblocking_n " failed");
-
-        goto failed;
+    if(!(ngx_event_flags & NGX_USE_URING_EVENT)) {
+        if (ngx_nonblocking(s) == -1) {
+            ngx_log_error(NGX_LOG_ALERT, pc->log, ngx_socket_errno,
+                          ngx_nonblocking_n " failed");
+    
+            goto failed;
+        }
     }
 
     if (pc->local) {
@@ -203,6 +205,15 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
                    "connect to %V, fd:%d #%uA", pc->name, s, c->number);
 
     rc = connect(s, pc->sockaddr, pc->socklen);
+
+    if((ngx_event_flags & NGX_USE_URING_EVENT)) {
+        if (ngx_nonblocking(s) == -1) {
+            ngx_log_error(NGX_LOG_ALERT, pc->log, ngx_socket_errno,
+                          ngx_nonblocking_n " failed");
+    
+            goto failed;
+        }
+    }
 
     if (rc == -1) {
         err = ngx_socket_errno;
